@@ -2,13 +2,13 @@
 {
     public class DiscountPlatinium : IDiscount
     {
-        public DiscountNote CalculateDiscount(Customer customer, SubscriptionPlan subscriptionPlan, decimal baseAmount,  int seatCount, bool useLoyaltyPoints)
+        public CalcNote CalculateDiscount(Customer customer, SubscriptionPlan subscriptionPlan, decimal baseAmount,  int seatCount, bool useLoyaltyPoints)
         {
             if (customer.Segment == "Platinum")
             {
-                return new DiscountNote(baseAmount * 0.15m, "platinum discount; ");
+                return new CalcNote(baseAmount * 0.15m, "platinum discount; ");
             }
-            return new DiscountNote(0, "");
+            return new CalcNote(0, "");
         }
     }
 }

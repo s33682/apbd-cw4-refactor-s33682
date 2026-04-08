@@ -2,7 +2,7 @@
 {
     public interface IDiscount
     {
-        DiscountNote CalculateDiscount(Customer customer,
+        CalcNote CalculateDiscount(Customer customer,
             SubscriptionPlan subscriptionPlan,
             decimal baseAmount,
             int seatCount,

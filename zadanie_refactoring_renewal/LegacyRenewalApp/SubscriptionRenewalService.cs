@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LegacyRenewalApp.Discount;
+using LegacyRenewalApp.Payment;
 
 namespace LegacyRenewalApp
 {
@@ -10,6 +11,9 @@ namespace LegacyRenewalApp
         private ISubscriptionPlanRepository planRepository;
         private ILegacyBillingGateway billingGateway;
         private List<IDiscount> discounts;
+        private ISuportFee suportFeeCalc;
+        private ITaxRate taxRateProv;
+        private List<IPayment>  paymentMethods;
 
         public SubscriptionRenewalService()
         {
@@ -24,15 +28,26 @@ namespace LegacyRenewalApp
             discounts.Add(new DiscountTime());
             discounts.Add(new DiscountSeat());
             discounts.Add(new DiscountPoints());
+            suportFeeCalc = new SupportFee();
+            taxRateProv = new TaxRate();
+            paymentMethods = new List<IPayment>();
+            paymentMethods.Add(new PaymentCard());
+            paymentMethods.Add(new PaymentBank());
+            paymentMethods.Add(new PaymentInvoice());
+            paymentMethods.Add(new PaymentPaypal());
         }
 
         public SubscriptionRenewalService(ICustomerRepository customerRepository,
-            ISubscriptionPlanRepository planRepository, ILegacyBillingGateway billingGateway, List<IDiscount> discounts)
+            ISubscriptionPlanRepository planRepository, ILegacyBillingGateway billingGateway, List<IDiscount> discounts,
+            ISuportFee suportFeeCalc, ITaxRate taxRateProv, List<IPayment> paymentMethods)
         {
             this.customerRepository = customerRepository;
             this.planRepository = planRepository;
             this.billingGateway = billingGateway;
             this.discounts = discounts;
+            this.suportFeeCalc = suportFeeCalc;
+            this.taxRateProv = taxRateProv;
+            this.paymentMethods = paymentMethods;
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -80,7 +95,7 @@ namespace LegacyRenewalApp
             
             for (int i=0; i<discounts.Count; i++)
             {
-                DiscountNote dn = discounts[i].CalculateDiscount(customer, plan, baseAmount, seatCount, useLoyaltyPoints);
+                CalcNote dn = discounts[i].CalculateDiscount(customer, plan, baseAmount, seatCount, useLoyaltyPoints);
                 discountAmount += dn.Amount;
                 notes += dn.Notes;
             }
@@ -93,69 +108,26 @@ namespace LegacyRenewalApp
                 notes += "minimum discounted subtotal applied; ";
             }
 
-            decimal supportFee = 0m;
-            if (includePremiumSupport)
-            {
-                if (normalizedPlanCode == "START")
-                {
-                    supportFee = 250m;
-                }
-                else if (normalizedPlanCode == "PRO")
-                {
-                    supportFee = 400m;
-                }
-                else if (normalizedPlanCode == "ENTERPRISE")
-                {
-                    supportFee = 700m;
-                }
-
-                notes += "premium support included; ";
-            }
-
+            decimal supportFee = suportFeeCalc.CalculateFee(normalizedPlanCode, includePremiumSupport);
+            
             decimal paymentFee = 0m;
-            if (normalizedPaymentMethod == "CARD")
+            decimal baseAmountPayment = subtotalAfterDiscount + supportFee;
+            string notesBackup = notes;
+            
+            for (int i=0; i<paymentMethods.Count; i++)
             {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.02m;
-                notes += "card payment fee; ";
+                CalcNote dn = paymentMethods[i].Calculate(normalizedPaymentMethod, baseAmountPayment);
+                paymentFee += dn.Amount;
+                notes += dn.Notes;
             }
-            else if (normalizedPaymentMethod == "BANK_TRANSFER")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.01m;
-                notes += "bank transfer fee; ";
-            }
-            else if (normalizedPaymentMethod == "PAYPAL")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.035m;
-                notes += "paypal fee; ";
-            }
-            else if (normalizedPaymentMethod == "INVOICE")
-            {
-                paymentFee = 0m;
-                notes += "invoice payment; ";
-            }
-            else
+
+            if (notesBackup.Equals(notes))
             {
                 throw new ArgumentException("Unsupported payment method");
             }
 
-            decimal taxRate = 0.20m;
-            if (customer.Country == "Poland")
-            {
-                taxRate = 0.23m;
-            }
-            else if (customer.Country == "Germany")
-            {
-                taxRate = 0.19m;
-            }
-            else if (customer.Country == "Czech Republic")
-            {
-                taxRate = 0.21m;
-            }
-            else if (customer.Country == "Norway")
-            {
-                taxRate = 0.25m;
-            }
-
+            decimal taxRate = taxRateProv.GetTaxRate(customer.Country);
+            
             decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
             decimal taxAmount = taxBase * taxRate;
             decimal finalAmount = taxBase + taxAmount;
